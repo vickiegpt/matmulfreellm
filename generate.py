@@ -3,7 +3,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import mmfreelm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 #Change here to our open-sourced model
-name = ''
+name = 'ridger/MMfreeLM-2.7B'
 tokenizer = AutoTokenizer.from_pretrained(name)
 model = AutoModelForCausalLM.from_pretrained(name).cuda().half()
 input_prompt = "In a shocking finding, scientist discovered a herd of unicorns living in a remote, "
