@@ -25,7 +25,8 @@ def generate_assembly_test_vectors():
     seq_len = 1      # Single timestep for assembly test
     
     # Q3.5 fixed-point parameters
-    FRAC_BITS = 5
+    FRAC_BITS = 3
+    INT_BITS = 5
     SCALE = 1 << FRAC_BITS
     
     def to_fixed(x):

@@ -9,7 +9,7 @@ import numpy as np
 from typing import Tuple, Optional
 
 
-class HGRNFixed8bit:
+class HGRNFixed8bit(nn.Module):
     """
     8-bit fixed-point implementation of HGRN (Hierarchically Gated Recurrent Network)
     
@@ -25,9 +25,10 @@ class HGRNFixed8bit:
     """
     
     def __init__(self):
+        super().__init__()
         # Fixed-point configuration
-        self.FRAC_BITS = 5
-        self.INT_BITS = 3
+        self.FRAC_BITS = 3
+        self.INT_BITS = 5
         self.SCALE = 1 << self.FRAC_BITS  # 32
         self.MAX_VAL = (1 << 7) - 1  # 127
         self.MIN_VAL = -(1 << 7)     # -128
@@ -57,16 +58,16 @@ class HGRNFixed8bit:
     
     def apply_sigmoid(self, x: torch.Tensor) -> torch.Tensor:
         """Apply sigmoid using lookup table"""
-        lut = self.sigmoid_lut()
+        lut = self.sigmoid_lut().to(x.device)
         # Shift indices to handle negative values
         indices = (x.to(torch.int16) - self.MIN_VAL).to(torch.long)
         indices = torch.clamp(indices, 0, len(lut) - 1)
         return lut[indices]
     
     def ternary_matmul(self, x: torch.Tensor, w_ternary: torch.Tensor, 
-                       w_scale: torch.Tensor) -> torch.Tensor:
+                w_scale: torch.Tensor) -> torch.Tensor:
         """
-        Perform matrix multiplication with ternary weights
+        Perform ternary matrix multiplication (tmatmul)
         
         Args:
             x: Input tensor [batch, seq_len, hidden] in fixed-point
@@ -76,11 +77,12 @@ class HGRNFixed8bit:
         Returns:
             Output tensor [batch, seq_len, out] in fixed-point
         """
+        print(f"x: {x.shape}, w_ternary: {w_ternary.shape}, w_scale: {w_scale.shape}")
         batch, seq_len, hidden = x.shape
         out_dim = w_ternary.shape[1]
         
-        # Initialize output
-        output = torch.zeros(batch, seq_len, out_dim, dtype=torch.int16)
+        # Initialize output on the same device as input
+        output = torch.zeros(batch, seq_len, out_dim, dtype=torch.int16, device=x.device)
         
         # Efficient ternary multiplication
         for i in range(out_dim):
@@ -102,30 +104,31 @@ class HGRNFixed8bit:
         return torch.clamp(output, self.MIN_VAL, self.MAX_VAL).to(torch.int8)
     
     def hgrn_cell(self, x: torch.Tensor, h_prev: torch.Tensor,
-                  w_i: torch.Tensor, w_f: torch.Tensor, w_g: torch.Tensor,
-                  w_scale_i: torch.Tensor, w_scale_f: torch.Tensor, w_scale_g: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                  w_i: torch.Tensor, w_f: torch.Tensor, w_g: torch.Tensor, w_o: torch.Tensor,
+                  w_scale_i: torch.Tensor, w_scale_f: torch.Tensor, w_scale_g: torch.Tensor, w_scale_o: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Single HGRN cell computation in fixed-point
+        Single HGRN cell computation in fixed-point with all 4 ternary matmul operations
         
         Args:
             x: Input [batch, hidden] in fixed-point
             h_prev: Previous hidden state [batch, hidden] in fixed-point
-            w_i, w_f, w_g: Ternary weight matrices
-            w_scale_i, w_scale_f, w_scale_g: Scale factors
+            w_i, w_f, w_g, w_o: Ternary weight matrices
+            w_scale_i, w_scale_f, w_scale_g, w_scale_o: Scale factors
             
         Returns:
-            i: Input gate output
+            o: Output 
             h: New hidden state
         """
-        # Project input with ternary matrices
+        # Project input with ternary matrices - 3 ternary_matmul operations
         i = self.ternary_matmul(x.unsqueeze(1), w_i, w_scale_i).squeeze(1)
         f = self.ternary_matmul(x.unsqueeze(1), w_f, w_scale_f).squeeze(1)
+        g = self.ternary_matmul(x.unsqueeze(1), w_g, w_scale_g).squeeze(1)
         
         # Apply sigmoid to forget gate
         f_sig = self.apply_sigmoid(f)
         
         # Compute 1 - f (in fixed-point)
-        one_fixed = self.to_fixed(torch.ones_like(f_sig, dtype=torch.float32))
+        one_fixed = self.to_fixed(torch.ones_like(f_sig, dtype=torch.float32, device=f_sig.device))
         one_minus_f = one_fixed - f_sig
         
         # Apply swiglu: i * sigmoid(i) * (1-f)
@@ -137,7 +140,11 @@ class HGRNFixed8bit:
         h = self.fixed_mul(f_sig, h_prev) + i
         h = torch.clamp(h, self.MIN_VAL, self.MAX_VAL).to(torch.int8)
         
-        return i, h
+        # Apply g_norm (simplified as multiplication) and output projection - 4th ternary_matmul
+        gh = self.fixed_mul(g, h)
+        o = self.ternary_matmul(gh.unsqueeze(1), w_o, w_scale_o).squeeze(1)
+        
+        return o, h
     
     def forward(self, x: torch.Tensor, 
                 w_i: torch.Tensor, w_f: torch.Tensor, w_g: torch.Tensor, w_o: torch.Tensor,
@@ -163,7 +170,7 @@ class HGRNFixed8bit:
         
         # Initialize hidden state
         if h_init is None:
-            h = torch.zeros(batch, hidden, dtype=torch.int8)
+            h = torch.zeros(batch, hidden, dtype=torch.int8, device=x.device)
         else:
             h = self.to_fixed(h_init)
         
@@ -172,18 +179,10 @@ class HGRNFixed8bit:
         for t in range(seq_len):
             x_t = x_fixed[:, t, :]
             
-            # HGRN cell computation
-            i_t, h = self.hgrn_cell(x_t, h, w_i, w_f, w_g, 
-                                   w_scale_i, w_scale_f, w_scale_g)
+            # HGRN cell computation - now includes all 4 ternary_matmul operations
+            o_t, h = self.hgrn_cell(x_t, h, w_i, w_f, w_g, w_o,
+                                   w_scale_i, w_scale_f, w_scale_g, w_scale_o)
             
-            # Project with g and output
-            g_t = self.ternary_matmul(x_t.unsqueeze(1), w_g, w_scale_g).squeeze(1)
-            
-            # g_norm (simplified as just multiplication for now)
-            gh = self.fixed_mul(g_t, h)
-            
-            # Output projection
-            o_t = self.ternary_matmul(gh.unsqueeze(1), w_o, w_scale_o).squeeze(1)
             outputs.append(o_t)
         
         # Stack outputs
