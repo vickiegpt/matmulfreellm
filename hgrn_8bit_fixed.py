@@ -77,7 +77,7 @@ class HGRNFixed8bit(nn.Module):
         Returns:
             Output tensor [batch, seq_len, out] in fixed-point
         """
-        print(f"x: {x.shape}, w_ternary: {w_ternary.shape}, w_scale: {w_scale.shape}")
+        # print(f"x: {x.shape}, w_ternary: {w_ternary.shape}, w_scale: {w_scale.shape}")
         batch, seq_len, hidden = x.shape
         out_dim = w_ternary.shape[1]
         

@@ -2,9 +2,9 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import torch
 import torch.nn as nn
+from typing import Tuple, Optional
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from hgrn_8bit_fixed import HGRNFixed8bit
-import mmfreelm
 from mmfreelm.layers.hgrn_bit import HGRNBitAttention
 
 
@@ -94,6 +94,25 @@ class FixedPointHGRNAttention(nn.Module):
             past_key_values.update(last_state, self.layer_idx, seq_len)
         
         return output, None, past_key_values
+    
+    def init_state(self, batch_size: int) -> Tuple[torch.Tensor]:
+        """Initialize state for caching during generation"""
+        # Use one of the weight tensors to get device and dtype
+        device = self.w_i_ternary.device
+        dtype = torch.float16  # Use half precision like the model
+        
+        state = tuple()
+        if self.use_short_conv:
+            conv_size = getattr(self.h_conv1d, 'kernel_size', 4)
+            if isinstance(conv_size, tuple):
+                conv_size = conv_size[0]
+            state += (torch.zeros(batch_size, self.hidden_size, conv_size, 
+                                device=device, dtype=dtype),)
+        # Add recurrent state
+        state += (torch.zeros(batch_size, self.num_heads, 1, 
+                            self.input_dim // self.num_heads, 
+                            device=device, dtype=dtype),)
+        return state
 
 
 def replace_with_fixed_point_hgrn(model):
