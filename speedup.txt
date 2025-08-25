@@ -1,0 +1,26 @@
+Running on: cuda
+
+============================================================
+FIXED-POINT vs FLOATING-POINT HGRN QUICK BENCHMARK
+============================================================
+
+Configuration:
+  Hidden Size: 256
+  Num Layers: 2
+  Batch Size: 1
+  Device: cuda
+
+----------------------------------------
+MEMORY USAGE
+----------------------------------------
+Fixed-Point Model: 0.50 MB
+Floating-Point Model: 2.00 MB
+Memory Reduction: 74.9%
+
+----------------------------------------
+INFERENCE SPEED
+----------------------------------------
+Seq Length   Fixed (ms)      Float (ms)      Speedup   
+----------------------------------------------------
+16           6473.693        3.078           0.00      x
+32           12117.435       6.175           0.00      x
