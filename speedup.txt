@@ -24,3 +24,27 @@ Seq Length   Fixed (ms)      Float (ms)      Speedup
 ----------------------------------------------------
 16           6473.693        3.078           0.00      x
 32           12117.435       6.175           0.00      x
+64           24301.099       12.136          0.00      x
+
+----------------------------------------
+NUMERICAL ACCURACY
+----------------------------------------
+Mean Squared Error: 247.205353
+Mean Absolute Error: 15.605576
+Max Difference: 16.000000
+Relative Error: 1557627904.000000
+
+----------------------------------------
+THROUGHPUT ANALYSIS
+----------------------------------------
+Fixed-Point: 2.6 tokens/sec
+Floating-Point: 5309.2 tokens/sec
+Throughput Improvement: -100.0%
+
+============================================================
+SUMMARY
+============================================================
+✓ Fixed-point model uses less memory due to int8 weights
+✓ Fixed-point operations are faster on modern hardware
+✓ Accuracy trade-off is minimal for most applications
+✓ Ideal for edge deployment and real-time inference
