@@ -20,7 +20,7 @@ class HGRNFixed8bit(nn.Module):
     4. Recurrent update: h_t = f_t * h_{t-1} + i_t
     5. Output projection: o = W_o @ (g_norm(g) * h)
     
-    Fixed-point format: Q3.5 (8-bit total: 3 integer bits, 5 fractional bits)
+    Fixed-point format: Q3.5 (8-bit total: 5 integer bits, 3 fractional bits)
     Range: [-4, 3.96875] with precision 0.03125
     """
     

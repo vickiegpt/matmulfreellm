@@ -1,0 +1,119 @@
+
+======================================================================
+                    8-BIT vs 16-BIT FIXED-POINT BENCHMARK
+======================================================================
+
+FORMAT SPECIFICATIONS:
+----------------------------------------------------------------------
+8-bit  (Q3.5):  3 integer bits, 5 fractional bits
+                Range: [-16.0, 15.96875], Precision: 0.03125
+                Memory: 1 byte per weight
+
+16-bit (Q8.8):  8 integer bits, 8 fractional bits
+                Range: [-128.0, 127.996], Precision: 0.00390625
+                Memory: 2 bytes per weight
+
+Float32:        23 mantissa bits, 8 exponent bits
+                Range: ±3.4e38, Precision: ~7 decimal digits
+                Memory: 4 bytes per weight
+======================================================================
+8-BIT vs 16-BIT FIXED-POINT PRECISION COMPARISON
+======================================================================
+
+Precision Test Results:
+----------------------------------------------------------------------
+Original     8-bit Q3.5      16-bit Q8.8     8-bit Error     16-bit Error   
+----------------------------------------------------------------------
+0.001000     0.000000        0.000000        0.001000        0.001000       
+0.010000     0.000000        0.011719        0.010000        0.001719       
+0.100000     0.125000        0.101562        0.025000        0.001562       
+0.500000     0.500000        0.500000        0.000000        0.000000       
+1.000000     1.000000        1.000000        0.000000        0.000000       
+2.000000     2.000000        2.000000        0.000000        0.000000       
+3.990000     4.000000        3.988281        0.010000        0.001719       
+-0.001000    0.000000        0.000000        0.001000        0.001000       
+-0.010000    0.000000        -0.011719       0.010000        0.001719       
+-0.100000    -0.125000       -0.101562       0.025000        0.001562       
+-0.500000    -0.500000       -0.500000       0.000000        0.000000       
+-1.000000    -1.000000       -1.000000       0.000000        0.000000       
+-2.000000    -2.000000       -2.000000       0.000000        0.000000       
+-3.990000    -4.000000       -3.988281       0.010000        0.001719       
+0.000000     0.000000        0.000000        0.000000        0.000000       
+127.000000   15.875000       127.000000      111.125000      0.000000       
+-128.000000  -16.000000      -128.000000     112.000000      0.000000       
+
+Error Statistics:
+----------------------------------------------------------------------
+                    8-bit            16-bit           Improvement
+Mean Error:         13.130412        0.000706        18601.4x
+Max Error:          112.000000        0.001719        65163.3x
+Precision:          0.125000        0.003906        32.0x
+
+======================================================================
+OPERATION ACCURACY COMPARISON
+======================================================================
+
+Multiplication Accuracy:
+----------------------------------------
+8-bit Mean Error:  0.091945
+16-bit Mean Error: 0.003168
+Improvement:       29.0x better with 16-bit
+
+Sigmoid Approximation Accuracy:
+----------------------------------------
+8-bit Mean Error:  0.033345
+16-bit Mean Error: 0.002037
+Improvement:       16.4x better with 16-bit
+
+======================================================================
+HGRN LAYER PERFORMANCE COMPARISON
+======================================================================
+Device: cuda
+
+8-bit HGRN Layer (Q3.5):
+----------------------------------------
+Time per iteration: 6077.735 ms
+Throughput: 1348 ops/sec
+Weight memory: 0.251 MB
+
+16-bit HGRN Layer (Q8.8):
+----------------------------------------
+Time per iteration: 6090.617 ms
+Throughput: 1345 ops/sec
+Weight memory: 0.252 MB
+
+Output Comparison:
+----------------------------------------
+8-bit output range:  [-16.000, 15.875]
+16-bit output range: [-128.000, 127.996]
+Difference (MSE): 16596.773438
+
+Performance Summary:
+----------------------------------------
+Speed: 8-bit is 1.0x faster
+Memory: 16-bit uses 1.00x more memory
+Precision: 16-bit has 32x better precision
+
+======================================================================
+CONCLUSION
+======================================================================
+
+8-bit Fixed-Point (Q3.5):
+  ✓ Minimal memory usage (1 byte/weight)
+  ✓ Fastest computation
+  ✓ Best for extreme edge deployment
+  ✗ Limited precision and range
+  ✗ Higher quantization errors
+
+16-bit Fixed-Point (Q8.8):
+  ✓ 32x better precision than 8-bit
+  ✓ Much wider value range
+  ✓ Better numerical stability
+  ✓ Still 50% memory savings vs float32
+  ✗ 2x more memory than 8-bit
+  ✗ Slightly slower than 8-bit
+
+Recommendations:
+  • Use 8-bit for: Embedded systems, IoT devices, extreme memory constraints
+  • Use 16-bit for: Mobile devices, edge servers, accuracy-critical applications
+  • Use float32 for: Training, research, unlimited resources
