@@ -93,17 +93,23 @@ class HGRNBitAttention(nn.Module):
         # launching the triton kernel for just one token will actually be slower
         mode = 'fused_recurrent' if hidden_states.shape[1] == 1 else self.mode
 
-        last_state = past_key_values[self.layer_idx] if use_cache else None
+        cache_requested = past_key_values is not None
+        cached_state = None
+        if cache_requested:
+            try:
+                cached_state = past_key_values[self.layer_idx]
+            except (IndexError, KeyError, TypeError):
+                cached_state = None
         if self.use_short_conv:
-            conv_state = last_state[0] if use_cache else None
+            conv_state = cached_state[0] if (cached_state is not None and self.share_conv_kernel) else None
             if self.share_conv_kernel:
                 # conv state is updated inplace
                 hidden_states = self.h_conv1d(hidden_states, attention_mask, conv_state)
                 i = self.i_proj(hidden_states)
                 f = self.f_proj(hidden_states)
             else:
-                conv_state_i = last_state[2] if use_cache else None
-                conv_state_f = last_state[1] if use_cache else None
+                conv_state_i = cached_state[2] if cached_state is not None else None
+                conv_state_f = cached_state[1] if cached_state is not None else None
                 i = self.i_conv1d(self.i_proj(hidden_states), attention_mask, conv_state_i)
                 f = self.f_conv1d(self.f_proj(hidden_states), attention_mask, conv_state_f)
         else:
@@ -120,21 +126,37 @@ class HGRNBitAttention(nn.Module):
             i = i.mul_(attention_mask.unsqueeze(-1))
         i, f = map(lambda x: rearrange(x, 'b l (h d) -> b h l d', h=self.num_heads), (i, f))
 
-        recurrent_state = last_state[-1] if use_cache else None
+        recurrent_state = cached_state[-1] if (cached_state is not None and use_cache) else None
         if mode == 'fused_recurrent':
-            o, recurrent_state = fused_recurrent_hgrn(i, f, initial_state=recurrent_state, output_final_state=use_cache)
+            o, recurrent_state = fused_recurrent_hgrn(
+                i,
+                f,
+                initial_state=recurrent_state,
+                output_final_state=cache_requested,
+            )
         else:
             raise NotImplementedError(f"Not supported mode `{mode}`.")
 
-        if past_key_values is not None:
+        if cache_requested:
+            if recurrent_state is None:
+                raise RuntimeError("Expected recurrent state when caching is requested but received `None`.")
             if self.use_short_conv:
                 if self.share_conv_kernel:
-                    last_state = (conv_state, recurrent_state)
+                    if conv_state is None and cached_state is not None:
+                        conv_state = cached_state[0]
+                    if conv_state is None:
+                        raise RuntimeError("Missing convolution state for caching; ensure `past_key_values` are initialized.")
+                    state_to_store = (conv_state, recurrent_state)
                 else:
-                    last_state = (conv_state_i, conv_state_f, recurrent_state)
+                    if conv_state_i is None or conv_state_f is None:
+                        if cached_state is None:
+                            raise RuntimeError("Missing convolution states for caching; ensure `past_key_values` are initialized.")
+                        conv_state_i = cached_state[2]
+                        conv_state_f = cached_state[1]
+                    state_to_store = (conv_state_i, conv_state_f, recurrent_state)
             else:
-                last_state = (recurrent_state,)
-            past_key_values.update(last_state, self.layer_idx, i.shape[2])
+                state_to_store = (recurrent_state,)
+            past_key_values.update(state_to_store, self.layer_idx, i.shape[2])
 
         o = self.g_norm(self.g_proj(hidden_states), rearrange(o, 'b h l d -> b l (h d)'))
         o = self.o_proj(o)

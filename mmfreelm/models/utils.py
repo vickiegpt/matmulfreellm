@@ -59,11 +59,36 @@ class RecurrentCache(Cache):
 
         if isinstance(state, torch.Tensor):
             state = (state,)
+
+        def _clone_if_tensor(value: Any) -> Any:
+            return value.clone() if isinstance(value, torch.Tensor) else value
+
         if len(self.states) <= layer_idx:
-            self.states.append(state)
+            # store a snapshot of the provided state (values may be updated in-place later)
+            self.states.append(tuple(_clone_if_tensor(s) for s in state))
         else:
+            current_state = list(self.states[layer_idx])
+            if len(current_state) < len(state):
+                current_state.extend([None] * (len(state) - len(current_state)))
+
             for i, s in enumerate(state):
-                self.states[layer_idx][i].copy_(s)
+                if isinstance(s, torch.Tensor):
+                    needs_replacement = (
+                        current_state[i] is None
+                        or not isinstance(current_state[i], torch.Tensor)
+                        or current_state[i].shape != s.shape
+                        or current_state[i].dtype != s.dtype
+                        or current_state[i].device != s.device
+                    )
+                    if needs_replacement:
+                        current_state[i] = s.clone()
+                    else:
+                        current_state[i].copy_(s)
+                else:
+                    current_state[i] = s
+
+            self.states[layer_idx] = tuple(current_state)
+
             # update the number of seen tokens once we achieve the last layer
             if layer_idx == len(self) - 1:
                 self._seen_tokens += 1
